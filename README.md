@@ -2,6 +2,24 @@
 
 Next.js-приложение с двумя способами входа: **email + пароль** (JWT в httpOnly-cookies и refresh-токены в PostgreSQL) и **OAuth** (Google / GitHub через NextAuth).
 
+## Стек и технологии
+
+| Категория | Что используется |
+|-----------|-------------------|
+| **Фреймворк** | [Next.js](https://nextjs.org/) 16 (App Router), [React](https://react.dev/) 19 |
+| **Язык** | [TypeScript](https://www.typescriptlang.org/) 5 |
+| **Стили** | [Tailwind CSS](https://tailwindcss.com/) 4 (`@tailwindcss/postcss`) |
+| **База данных** | [PostgreSQL](https://www.postgresql.org/), [Prisma](https://www.prisma.io/) 7 (`@prisma/client`), драйвер [`pg`](https://node-postgres.com/), адаптер [`@prisma/adapter-pg`](https://www.prisma.io/docs/orm/overview/databases/postgresql) |
+| **Аутентификация** | [NextAuth.js](https://next-auth.js.org/) v4, адаптер [`@auth/prisma-adapter`](https://authjs.dev/reference/adapter/prisma), JWT — [`jose`](https://github.com/panva/jose), хеш паролей — [`bcryptjs`](https://github.com/dcodeIO/bcrypt.js) |
+| **Формы и валидация** | [React Hook Form](https://react-hook-form.com/), [`@hookform/resolvers`](https://github.com/react-hook-form/resolvers), [Zod](https://zod.dev/) |
+| **Клиентское состояние / запросы** | [TanStack Query](https://tanstack.com/query) (React Query) |
+| **Почта** | [Resend](https://resend.com/), шаблоны — [`@react-email/components`](https://react.email/) |
+| **Ограничение частоты запросов** | [Upstash Redis](https://upstash.com/) (`@upstash/redis`, `@upstash/ratelimit`) |
+| **UI-компоненты и UX** | Локальные примитивы в `src/components/ui/`, иконки — [Lucide React](https://lucide.dev/), уведомления — [React Toastify](https://fkhadra.github.io/react-toastify/introduction), утилита классов — [`clsx`](https://github.com/lukeed/clsx) + [`tailwind-merge`](https://github.com/dcastil/tailwind-merge) |
+| **Линтинг** | [ESLint](https://eslint.org/) 9, [`eslint-config-next`](https://nextjs.org/docs/app/api-reference/config/eslint) |
+
+Версии пакетов смотрите в [`package.json`](package.json).
+
 ## Требования
 
 - Node.js 20+
@@ -96,7 +114,7 @@ pnpm exec prisma generate
 
 ## UI
 
-Локальные примитивы лежат в [`src/components/ui/`](src/components/ui/) (кнопка, поля, карточка). Иконки — [`lucide-react`](https://lucide.dev/).
+Код лежит в [`src/components/ui/`](src/components/ui/) (кнопка, поля, карточка); см. также таблицу «UI-компоненты и UX» выше.
 
 ## Замечания по безопасности и эксплуатации
 
