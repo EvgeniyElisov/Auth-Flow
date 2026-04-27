@@ -1,36 +1,105 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# auth-flow
 
-## Getting Started
+Next.js-приложение с двумя способами входа: **email + пароль** (JWT в httpOnly-cookies и refresh-токены в PostgreSQL) и **OAuth** (Google / GitHub через NextAuth).
 
-First, run the development server:
+## Требования
+
+- Node.js 20+
+- [pnpm](https://pnpm.io/)
+- PostgreSQL
+
+## Переменные окружения
+
+Создайте `.env` в корне проекта. Обязательные переменные проверяются в [`src/shared/utils/validateEnv.ts`](src/shared/utils/validateEnv.ts):
+
+| Переменная | Назначение |
+|------------|------------|
+| `DATABASE_URL` | Строка подключения PostgreSQL для Prisma |
+| `DIRECT_URL` | Опционально: прямой URL к БД для миграций (если `DATABASE_URL` идёт через пулер) |
+| `NEXTAUTH_URL` | Публичный URL приложения, например `http://localhost:3000` |
+| `NEXTAUTH_SECRET` | Секрет NextAuth, **не короче 32 символов** |
+| `JWT_SECRET` | Секрет для подписи access/refresh JWT (`jose`), **не короче 32 символов** |
+| `RESEND_API_KEY` | API-ключ [Resend](https://resend.com/) для писем |
+| `EMAIL_FROM` | Отправитель писем, например `Auth <onboarding@yourdomain.com>` |
+
+Опционально:
+
+| Переменная | Назначение |
+|------------|------------|
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Rate limit (Upstash Redis). Без них лимит отключён; в production в лог пишется предупреждение |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth Google |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | OAuth GitHub |
+
+## Установка и запуск
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
+pnpm exec prisma migrate dev   # при первой настройке БД
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Откройте [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Сборка:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm build
+pnpm start
+```
 
-## Learn More
+Перед первой сборкой или после изменения схемы выполните:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm exec prisma generate
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Как устроен auth flow
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Email и пароль
 
-## Deploy on Vercel
+1. **Регистрация** — `POST /api/auth/register`: хеш пароля (bcrypt), в БД сохраняется хеш verification-токена, на почту уходит ссылка вида `{NEXTAUTH_URL}/api/auth/verify-email?token=...`.
+2. **Подтверждение email** — `GET /api/auth/verify-email?token=...`: выставляет `emailVerified`, очищает токен, редирект на `/dashboard`.
+3. **Вход** — `POST /api/auth/login`: проверка пароля и того, что email подтверждён; выдаётся пара JWT (access ~15 мин, refresh ~7 дней). В БД сохраняется **refresh** (`RefreshToken`). В ответ выставляются httpOnly-cookies `access_token` и `refresh_token`.
+4. **Текущий пользователь** — `GET /api/auth/me`: читает `access_token`, проверяет JWT, возвращает профиль.
+5. **Обновление сессии** — `POST /api/auth/refresh`: по cookie `refresh_token` ротирует refresh (семейство токенов отзывается при ротации), обновляет cookies.
+6. **Выход** — `POST /api/auth/logout`: отзыв refresh в БД, очистка cookies.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Клиентский HTTP-слой: [`src/modules/core/api/api-client.ts`](src/modules/core/api/api-client.ts) — при `401` один раз пытается `POST /api/auth/refresh` и повторяет запрос (кроме исключённых эндпоинтов).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Сброс пароля
+
+- `POST /api/auth/forgot-password` — создаёт запись `PasswordReset` и отправляет письмо на `{NEXTAUTH_URL}/reset-password?token=...`.
+- `POST /api/auth/reset-password` — новый пароль, инвалидация всех refresh-токенов пользователя.
+
+### OAuth (NextAuth)
+
+Маршрут: `/api/auth/[...nextauth]`. Провайдеры подключаются только если заданы соответствующие env. Сессия NextAuth — **JWT**; в [`getUserId`](src/modules/auth/server/getUserId.ts) сначала берётся сессия OAuth, затем access JWT из cookie.
+
+## API (кратко)
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| POST | `/api/auth/register` | Регистрация |
+| GET | `/api/auth/verify-email` | Подтверждение email (редирект) |
+| POST | `/api/auth/login` | Вход (cookies) |
+| GET | `/api/auth/me` | Текущий пользователь |
+| POST | `/api/auth/refresh` | Обновление токенов |
+| POST | `/api/auth/logout` | Выход |
+| POST | `/api/auth/send-verification` | Повторная отправка письма (нужна авторизация по access/OAuth) |
+| POST | `/api/auth/forgot-password` | Запрос сброса пароля |
+| POST | `/api/auth/reset-password` | Установка нового пароля |
+| * | `/api/auth/[...nextauth]` | NextAuth |
+
+## Структура БД (Prisma)
+
+См. [`prisma/schema.prisma`](prisma/schema.prisma): `User`, `Account`, `Session` (модели для NextAuth), `RefreshToken`, `PasswordReset`.
+
+## UI
+
+Локальные примитивы лежат в [`src/components/ui/`](src/components/ui/) (кнопка, поля, карточка). Иконки — [`lucide-react`](https://lucide.dev/).
+
+## Замечания по безопасности и эксплуатации
+
+- В production задайте Upstash для rate limiting на чувствительных маршрутах, иначе лимит выключен.
+- Письма через Resend: без `RESEND_API_KEY` отправка упадёт в рантайме при вызове функций из [`src/modules/auth/server/email.ts`](src/modules/auth/server/email.ts).
+- Страница [`/dashboard`](src/app/dashboard/page.tsx) — заглушка после верификации; ограничение доступа по маршрутам можно добавить через middleware и проверку cookies/сессии.
